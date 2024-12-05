@@ -1,0 +1,404 @@
+---
+title: "Charlotte_final"
+author: "Mya Mitchem" 
+---
+
+# load libraries
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(tidycensus)
+library(ggplot2)
+library(dplyr)
+library(sf)
+```
+
+#load Census 2010
+
+```{r}
+Census_2010 = read_csv("~/Plan372/plan372_Final/Census_Block_Groups_2010.csv") #load census 2010 
+
+Census_2022 = read_csv("~/Plan372/plan372_Final/Census_Population_Block_Groups.csv") #load census 2022
+
+PD_Incidents = read_csv("~/Plan372/plan372_Final/CMPD_Incidents.csv") #load incidents 
+
+PD_Offices = read_csv("~/Plan372/plan372_Final/CMPD_Police_Division_Offices.csv")#load offices
+
+PD_Responses = read_csv("~/Plan372/plan372_Final/CMPD_Police_Response__Areas.csv") #load response areas 
+
+PD_Calls = read_csv("~/Plan372/plan372_Final/CMPD_Calls_for_Service.csv") #load calls for services 
+
+area_Census_2010 = read_csv("~/Plan372/plan372_Final/Response_area_Census_2010_created.csv")
+
+area_Census_2022 = read_csv("~/Plan372/plan372_Final/Response_area_Census_2022.csv")
+
+Violent_Crime = read_csv("~/Plan372/plan372_Final/CMPD_Violent_Crime.csv")
+
+```
+
+#found total population density of each division in 2010
+
+```{r}
+pop_density_2010 = area_Census_2010 |> 
+  group_by(DNAME)|>
+  summarize(pop_density_2010 = mean(Pop_SqMi, na.rm = TRUE)) |>
+ungroup()
+```
+
+```{r}
+print(pop_density_2010) 
+```
+
+#find the population density of divisions in 2022
+
+```{r}
+pop_density_22 = area_Census_2022 |>
+  group_by(DNAME) |>
+  summarize(pop_density_22 = mean(PopSqMi, na.rm = TRUE)) |>
+ungroup()
+```
+
+```{r}
+print(pop_density_22)
+```
+
+```{r}
+density_join =
+  left_join(pop_density_22, pop_density_2010, by = "DNAME")
+```
+
+#change to numerical values
+
+```{r}
+density_join <- density_join |> 
+  mutate(
+    pop_density_10 = as.numeric(pop_density_2010),
+    pop_density_22 = as.numeric(pop_density_22)
+  )
+```
+
+#find the yearly population density growth
+
+```{r}
+Yearly_density_growth <- density_join |>
+  group_by(DNAME) |>
+  summarize(
+    Yearly_density_growth = ((pop_density_22 / pop_density_10) - 1))|>
+  ungroup()
+```
+
+```{r}
+print(Yearly_density_growth)
+
+```
+
+#join the data to project yearly rates
+
+```{r}
+join_yearly_pop_growth = left_join(Yearly_density_growth, pop_density_22, by = "DNAME")
+
+```
+
+```{r}
+print(join_yearly_pop_growth)
+```
+
+#Find the density growth for each year (specifically until goal of 2030)
+
+```{r}
+join_yearly_pop_growth = join_yearly_pop_growth|>
+  mutate (pop_density_23 = ((pop_density_22) * (Yearly_density_growth
++1))) |>
+mutate (pop_density_24 = ((pop_density_23) * (Yearly_density_growth
++1))) |>
+mutate (pop_density_25 = ((pop_density_24) * (Yearly_density_growth
++1))) |>
+mutate (pop_density_26 = ((pop_density_25) * (Yearly_density_growth
++1)))|>
+mutate (pop_density_27 = ((pop_density_26) * (Yearly_density_growth
++1)))|>
+mutate (pop_density_28 = ((pop_density_27) * (Yearly_density_growth
++1)))|>
+mutate (pop_density_29 = ((pop_density_28) * (Yearly_density_growth
++1)))|>
+mutate (pop_density_30 = ((pop_density_29) * (Yearly_density_growth
++1)))
+```
+
+```{r}
+print(join_yearly_pop_growth)
+```
+
+#create a graph of the estimated population density until 2030
+
+```{r}
+graph = join_yearly_pop_growth |> 
+  pivot_longer(
+    cols = c("pop_density_22", "pop_density_23", "pop_density_24", "pop_density_25", "pop_density_26", "pop_density_27", "pop_density_28", "pop_density_29", "pop_density_30"),
+    names_to = "Year",
+    values_to = "Population_Density"
+  )
+graph = graph |> 
+  mutate(
+    Year = as.numeric(gsub("pop_density_", "", Year)), 
+    Population_Density = as.numeric(Population_Density)
+  )
+
+
+str(graph)
+
+ggplot(graph, aes(x = Year, y = Population_Density, group = DNAME, color = DNAME)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Year", y = "Population Density", title = "Population Density over Eight Years (2022-2030)") +
+  scale_x_continuous(
+    breaks = 22:30,
+    labels = c("2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030")
+  ) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+legend.key.size = unit(0.5, "cm"))
+```
+
+##calculate the total count of calls for the Mecklenburg PD #the earliest year is 2015 #see if there are any obvious trends
+
+```{r}
+Total_Calls = PD_Calls |>
+  group_by(CALENDAR_YEAR)|>
+  summarize(count_num = sum(CALL_COUNT))|>
+  ungroup()
+```
+
+```{r}
+print(Total_Calls)
+
+```
+
+#total crimes in each division in 2017
+
+```{r}
+Total_crime_2017 = PD_Incidents |>
+  filter(YEAR == 2017) |>
+  group_by(CMPD_PATROL_DIVISION)|>
+  summarize(total_crime_per_division = n())|>
+  ungroup()
+
+```
+
+```{r}
+print(Total_crime_2017)
+```
+
+#calculating property crimes based on the National Institude of Justice #https://nij.ojp.gov/topics/crime/property-crimes#:\~:text=In%20a%20property%20crime%2C%20a,well%20as%20vandalism%20and%20arson.
+
+```{r}
+Nonviolent_incidents_2017 = PD_Incidents|>
+  filter(YEAR == 2017)|>
+  filter(HIGHEST_NIBRS_DESCRIPTION == "Arson" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Burglary/B&E" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Damage/Vandalism Of Property" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Identity Theft" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Motor Vehicle Theft" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Pocket-Picking" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Robbery" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Stolen Property Offenses" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft From Building" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft of Motor Vehicle Parts from Vehicle" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft From Motor Vehicle" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft From Coin-Operated Machine Or Device")|>
+group_by(CMPD_PATROL_DIVISION,HIGHEST_NIBRS_DESCRIPTION) |>
+  summarize(property_incidents_2017 = n())|>
+  ungroup()
+```
+
+```{r}
+print(Nonviolent_incidents_2017)
+```
+
+#finding the total num of property crimes for 2017
+
+```{r}
+sum_total_2017 = Nonviolent_incidents_2017 |>
+group_by(CMPD_PATROL_DIVISION)|>
+summarize(total_property_crimes = sum(property_incidents_2017, na.rm = TRUE))|>
+  ungroup()
+```
+
+```{r}
+print(sum_total_2017)
+```
+
+#join the two to create a choice of property crimes total and total crimes to find the percentage
+
+```{r}
+join_total_crime_property_crimes = 
+  left_join(sum_total_2017,Total_crime_2017, by = "CMPD_PATROL_DIVISION")
+```
+
+```{r}
+print(join_total_crime_property_crimes)
+```
+
+```{r}
+with_percentage_join_total_crime_property_crimes = join_total_crime_property_crimes |>
+  mutate(percent_of_prop_crimes_17 = (total_property_crimes/total_crime_per_division) *100)
+```
+
+```{r}
+print(with_percentage_join_total_crime_property_crimes)
+```
+
+#total crimes in each division in 2023
+
+```{r}
+Total_crime_2023 = PD_Incidents |>
+  filter(YEAR == 2023) |>
+  group_by(CMPD_PATROL_DIVISION)|>
+  summarize(total_crime_per_division_2023 = n())|>
+  ungroup()
+
+```
+
+```{r}
+print(Total_crime_2023)
+```
+
+#finding property crimes in 2023
+
+```{r}
+Nonviolent_incidents_2023 = PD_Incidents|>
+  filter(YEAR == 2023)|>
+  filter(HIGHEST_NIBRS_DESCRIPTION == "Arson" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Burglary/B&E" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Damage/Vandalism Of Property" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Identity Theft" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Motor Vehicle Theft" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Pocket-Picking" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Robbery" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Stolen Property Offenses" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft From Building" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft of Motor Vehicle Parts from Vehicle" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft From Motor Vehicle" |
+                    HIGHEST_NIBRS_DESCRIPTION == "Theft From Coin-Operated Machine Or Device")|>
+group_by(CMPD_PATROL_DIVISION,HIGHEST_NIBRS_DESCRIPTION) |>
+  summarize(property_incidents_2023 = n())|>
+  ungroup()
+```
+
+```{r}
+print(Nonviolent_incidents_2023)
+```
+
+```{r}
+sum_total_2023 = Nonviolent_incidents_2023 |>
+group_by(CMPD_PATROL_DIVISION)|>
+summarize(total_property_crimes_2023 = sum(property_incidents_2023, na.rm = TRUE))|>
+  ungroup()
+```
+
+```{r}
+print(sum_total_2023)
+```
+
+```{r}
+join_total_crime_property_crimes_2023 = 
+  left_join(sum_total_2023,Total_crime_2023, by = "CMPD_PATROL_DIVISION")
+```
+
+```{r}
+print(join_total_crime_property_crimes_2023)
+```
+
+#find percent of total crimes that are property crimes
+
+```{r}
+With_percent_join_total_crime_property_crimes_2023 = join_total_crime_property_crimes_2023 |>
+  mutate(Percent_of_property_crimes_2023 = (total_property_crimes_2023/total_crime_per_division_2023)*100)
+```
+
+```{r}
+print(With_percent_join_total_crime_property_crimes_2023) 
+```
+
+#2017 and 2023 in one table
+
+```{r}
+crime_2023_2017_crime_join =
+  left_join(with_percentage_join_total_crime_property_crimes, With_percent_join_total_crime_property_crimes_2023, by = "CMPD_PATROL_DIVISION")
+```
+
+```{r}
+print(crime_2023_2017_crime_join)
+```
+
+```{r}
+crime_data = crime_2023_2017_crime_join |>
+  mutate(comp_percent_prop_crime_yearly_growth = (((Percent_of_property_crimes_2023/percent_of_prop_crimes_17)^(1/6)) -1))|>
+         print()
+```
+
+#Find the relationship between the yearly density growth and the percent of property crime
+
+```{r}
+crime_data = crime_data |>
+  mutate(CMPD_PATROL_DIVISION = paste(CMPD_PATROL_DIVISION, "Division"))
+
+
+combined_data = join_yearly_pop_growth |>
+  left_join(crime_data, by = c("DNAME" = "CMPD_PATROL_DIVISION"))
+
+# Create the graph
+ggplot(combined_data, aes(x = Yearly_density_growth, y = comp_percent_prop_crime_yearly_growth)) +
+  geom_point(color = "steelblue") + 
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  labs(
+    title = "Yearly Density Growth vs. Percent Property Crime Growth",
+    x = "Yearly Density Growth",
+    y = "Percent Property Crime Growth"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+#summarize data
+
+```{r}
+crime_data_2030 = crime_data |>
+  group_by(CMPD_PATROL_DIVISION)|>
+  summarize(crime_rate_growth_percentage = comp_percent_prop_crime_yearly_growth*100)|>
+  print()
+```
+
+```{r}
+crime_data_2030 = crime_data_2030 |>
+  left_join(join_yearly_pop_growth |> select(DNAME, pop_density_30), by = c("CMPD_PATROL_DIVISION" = "DNAME"))|>
+  print()
+```
+
+```{r}
+
+crime_data_2030 = crime_data_2030 |>
+  mutate(Property_crime_percentage = (crime_rate_growth_percentage / 100))|>
+  print()
+```
+
+```{r}
+With_percent_join_total_crime_property_crimes_2023 = With_percent_join_total_crime_property_crimes_2023 |>
+  mutate(CMPD_PATROL_DIVISION = paste(CMPD_PATROL_DIVISION, "Division"))
+
+crime_data_2030 = crime_data_2030|>
+   left_join(With_percent_join_total_crime_property_crimes_2023, by = "CMPD_PATROL_DIVISION") |>
+  print()
+ 
+```
+
+```{r}
+crime_data_2030 = crime_data_2030|>
+  mutate(Percent_of_property_crimes_2030 = Percent_of_property_crimes_2023*((1+Property_crime_percentage)^7))|>
+    arrange(desc(Percent_of_property_crimes_2030)) |>
+  print()
+```
